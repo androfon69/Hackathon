@@ -18,6 +18,17 @@
 #define OUTPUT_TEMPLATE "../checker/output/out-XXXXXX"
 #endif
 
+struct lib *alloc_lib() {
+	struct lib *lib = malloc(sizeof(struct lib));
+
+	lib->funcname = calloc(BUFSIZE, 1);
+	lib->libname = calloc(BUFSIZE, 1);
+	lib->filename = calloc(BUFSIZE, 1);
+	lib->outputfile = calloc(BUFSIZ, 1);
+
+	return lib;
+}
+
 void free_lib(struct lib *lib) {
 	if (lib->outputfile)
 		free(lib->outputfile);
@@ -45,12 +56,15 @@ static int lib_load(struct lib *lib)
 {
 	int rc;
 
+	/* generate output file */
 	strcpy(lib->outputfile, OUTPUT_TEMPLATE);
 	lib->output_fd = mkstemp(lib->outputfile);
 
+	/* redirect output from STDOUT to outputfile */
 	rc = dup2(lib->output_fd, STDOUT_FILENO);
 	DIE(rc < 0, "dup2");
 
+	/* lazy-load library to memory */
 	lib->handle = dlopen(lib->libname, RTLD_LAZY);
 	if (lib->handle == NULL) {
 		if (strlen(lib->filename))
@@ -60,10 +74,12 @@ static int lib_load(struct lib *lib)
 		return -1;
 	}
 
+	/* if no function was specified set the default as run() */
 	if (!strlen(lib->funcname)) {
 		strcpy(lib->funcname, "run");
 	}
 
+	/* load from from library into memory */
 	void *addr_func = dlsym(lib->handle, lib->funcname);
 	if (addr_func == NULL) {
 		if (strlen(lib->filename))
@@ -74,9 +90,11 @@ static int lib_load(struct lib *lib)
 	}
 
 	if (strlen(lib->filename)) {
+		/* execute with args */
 		lib->p_run = addr_func;
 		lib->run = NULL;
 	} else {
+		/* execute without args */
 		lib->p_run = NULL;
 		lib->run = addr_func;
 	}
@@ -115,6 +133,7 @@ static int lib_close(struct lib *lib)
 	/* TODO: Implement lib_close(). */
 	int rc;
 
+	/* unload library from memory */
 	rc = dlclose(lib->handle);
 	DIE(rc, "dlclose");
 
@@ -164,24 +183,22 @@ static int parse_command(const char *buf, char *name, char *func, char *params)
 static void handle(int acceptfd)
 {
 	char buffer[BUFSIZ];
-	struct lib *lib = malloc(sizeof(struct lib));
+	struct lib *lib = alloc_lib();
 	ssize_t bytes;
 
+	/* receive input from client */
 	bytes = recv_socket(acceptfd, buffer, BUFSIZ);
 	if (bytes < 0) {
 		close(acceptfd);
 		free(lib);
 		return;
 	}
-
-	lib->funcname = calloc(BUFSIZE, 1);
-	lib->libname = calloc(BUFSIZE, 1);
-	lib->filename = calloc(BUFSIZE, 1);
-	lib->outputfile = calloc(BUFSIZ, 1);
+	
 	parse_command(buffer, lib->libname, lib->funcname, lib->filename);
 
 	lib_run(lib);
 
+	/* send output to client*/
 	send_socket(acceptfd, lib->outputfile, strlen(lib->outputfile));
 
 	free_lib(lib);
@@ -194,17 +211,21 @@ static void handle_in_new_process(int acceptfd)
 	pid_t pid;
 
 	pid = fork();
+
 	switch (pid) {
-	case -1:
+	case -1:	/* error */
 		close_socket(acceptfd);
 		DIE(1, "pid == -1");
 		break;
 	case 0:		/* child process */
+		/* make child daemon so we don't have to call wait()*/
 		daemon(1, 1);
+
 		handle(acceptfd);
+
 		exit(EXIT_SUCCESS);
 		break;
-	default:
+	default:	/* parent process */
 		close(acceptfd);
 		break;
 	}
@@ -222,7 +243,8 @@ int main(void)
 
 	listen_fd = create_socket();
 	memset(&addr, 0, sizeof(addr));
-	//snprintf(addr.sun_path, sizeof(SOCKET_NAME), "%s", SOCKET_NAME);
+
+	/* Populate socket */
 	strcpy(addr.sun_path, SOCKET_NAME);
 	addr.sun_family = AF_UNIX;
 	ret = bind(listen_fd, (struct sockaddr *) &addr, sizeof(addr));
@@ -237,10 +259,6 @@ int main(void)
 		DIE(accept_fd < 0, "accept");
 
 		handle_in_new_process(accept_fd);
-
-		/* TODO - parse message with parse_command and populate lib */
-		/* TODO - handle request from client */
-		//ret = lib_run(&lib);
 	}
 
 	close_socket(listen_fd);

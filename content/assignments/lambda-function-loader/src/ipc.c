@@ -15,7 +15,7 @@ int create_socket(void)
 	int sock_fd;
 
 	sock_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-	DIE(sock_fd < 0, "socket");
+	ERR(sock_fd < 0, "Coudln't connect to socket.\n");
 
 	return sock_fd;
 }
@@ -27,13 +27,17 @@ int connect_socket(int fd)
 	struct sockaddr_un addr;
 
 	rc = access(SOCKET_NAME, R_OK | W_OK);
-	DIE(rc < 0, "access");
+	if (rc < 0) {
+		perror("Couldn't access socket\n");
+		return rc;
+	}
 
+	/* populate socket */
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
 	snprintf(addr.sun_path, sizeof(SOCKET_NAME), "%s", SOCKET_NAME);
 	rc = connect(fd, (struct sockaddr *) &addr, sizeof(addr));
-	DIE(rc < 0, "connect");
+	ERR(rc < 0, "Couldn't connect to socket.\n");
 
 	return rc;
 }
@@ -44,7 +48,6 @@ ssize_t send_socket(int fd, const char *buf, size_t len)
 	ssize_t bytes_sent;
 
 	bytes_sent = send(fd, buf, len, 0);
-	DIE(bytes_sent < 0, "send");
 
 	return bytes_sent;
 }
@@ -55,7 +58,6 @@ ssize_t recv_socket(int fd, char *buf, size_t len)
 	ssize_t bytes_received;
 
 	bytes_received = recv(fd, buf, len, 0);
-	DIE(bytes_received < 0, "recv");
 
 	return bytes_received;
 }
@@ -63,5 +65,7 @@ ssize_t recv_socket(int fd, char *buf, size_t len)
 void close_socket(int fd)
 {
 	/* TODO: Implement close_socket(). */
-	close(fd);
+	int rc;
+	rc = close(fd);
+	ERR(rc < 0, "Couldn't close socket.\n");
 }
