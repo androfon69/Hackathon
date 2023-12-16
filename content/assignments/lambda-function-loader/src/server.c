@@ -53,7 +53,10 @@ static int lib_load(struct lib *lib)
 
 	lib->handle = dlopen(lib->libname, RTLD_LAZY);
 	if (lib->handle == NULL) {
-		printf("Error: %s %s %s could not be executed.\n", lib->libname, lib->funcname, lib->filename);
+		if (strlen(lib->filename))
+			printf("Error: %s %s %s could not be executed.\n", lib->libname, lib->funcname, lib->filename);
+		else 
+			printf("Error: %s %s could not be executed.\n", lib->libname, lib->funcname);
 		return -1;
 	}
 
@@ -63,7 +66,10 @@ static int lib_load(struct lib *lib)
 
 	void *addr_func = dlsym(lib->handle, lib->funcname);
 	if (addr_func == NULL) {
-		printf("Error: %s %s %s could not be executed.\n", lib->libname, lib->funcname, lib->filename);
+		if (strlen(lib->filename))
+			printf("Error: %s %s %s could not be executed.\n", lib->libname, lib->funcname, lib->filename);
+		else 
+			printf("Error: %s %s could not be executed.\n", lib->libname, lib->funcname);
 		return -1;
 	}
 
@@ -193,7 +199,7 @@ static void handle_in_new_process(int acceptfd)
 		DIE(1, "pid == -1");
 		break;
 	case 0:		/* child process */
-		daemon(1, 1);
+			 daemon(1, 1);
 		handle(acceptfd);
 		exit(EXIT_SUCCESS);
 		break;
@@ -220,7 +226,7 @@ int main(void)
 	ret = bind(listen_fd, (struct sockaddr *) &addr, sizeof(addr));
 	DIE(ret < 0, "bind");
 
-	ret = listen(listen_fd, MAX_CLIENTS);
+	ret = listen(listen_fd, 5000);
 	DIE(ret < 0, "listen");
 
 	while (1) {
