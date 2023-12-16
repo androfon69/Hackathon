@@ -18,6 +18,22 @@
 #define OUTPUT_TEMPLATE "../checker/output/out-XXXXXX"
 #endif
 
+void free_lib(struct lib *lib) {
+	if (lib->outputfile)
+		free(lib->outputfile);
+
+	if (lib->filename)
+		free(lib->filename);
+
+	if (lib->funcname)
+		free(lib->funcname);
+
+	if (lib->libname)
+		free(lib->libname);
+
+	free(lib);
+}
+
 static int lib_prehooks(struct lib *lib)
 {
 	/* TODO: Implement lib_prehooks(). */
@@ -56,8 +72,29 @@ static int lib_load(struct lib *lib)
 static int lib_execute(struct lib *lib)
 {
 	/* TODO: Implement lib_execute(). */
-	if (!strcmp("run", lib->funcname)) {
+	int rc;
+
+	strcpy(lib->outputfile, OUTPUT_TEMPLATE);
+	int output_fd = mkstemp(lib->outputfile);
+
+	rc = dup2(output_fd, STDOUT_FILENO);
+	DIE(rc < 0, "dup2");
+
+	/* No args/function specified */
+	if (!strlen(lib->filename)) {
 		lib->run();
+
+		rc = close(output_fd);
+		DIE(rc < 0, "close");
+
+		return 0;
+	} else {
+		lib->p_run(lib->filename);
+
+		rc = close(output_fd);
+		DIE(rc < 0, "close");
+
+		return 0;
 	}
 
 	return 0;
@@ -66,6 +103,11 @@ static int lib_execute(struct lib *lib)
 static int lib_close(struct lib *lib)
 {
 	/* TODO: Implement lib_close(). */
+	int rc;
+
+	rc = dlclose(lib->handle);
+	DIE(rc, "dlclose");
+
 	return 0;
 }
 
@@ -109,48 +151,51 @@ static int parse_command(const char *buf, char *name, char *func, char *params)
 	return ret;
 }
 
-static void handle(int connectfd)
+static void handle(int acceptfd)
 {
 	char buffer[BUFSIZ];
-	struct lib *library = malloc(sizeof(struct lib));
+	struct lib *lib = malloc(sizeof(struct lib));
 	ssize_t bytes;
 
-	bytes = recv_socket(connectfd, buffer, BUFSIZ);
+	bytes = recv_socket(acceptfd, buffer, BUFSIZ);
 	if (bytes < 0) {
-		close(connectfd);
-		free(library);
+		close(acceptfd);
+		free(lib);
 		return;
 	}
 
-	library->funcname = calloc(BUFSIZE, 1);
-	library->libname = calloc(BUFSIZE, 1);
-	library->filename = calloc(BUFSIZE, 1);
-	parse_command(buffer, &library->libname, &library->funcname, &library->filename);
+	lib->funcname = calloc(BUFSIZE, 1);
+	lib->libname = calloc(BUFSIZE, 1);
+	lib->filename = calloc(BUFSIZE, 1);
+	lib->outputfile = calloc(BUFSIZ, 1);
+	parse_command(buffer, lib->libname, lib->funcname, lib->filename);
 
-	lib_run(library);
+	lib_run(lib);
 
-	send_data(connectfd, buffer, strlen(buffer));
+	send_socket(acceptfd, lib->outputfile, strlen(lib->outputfile));
+
+	free_lib(lib);
+
+	close(acceptfd);
 }
 
-static void handle_in_new_process(int connectfd)
+static void handle_in_new_process(int acceptfd)
 {
 	pid_t pid;
 
 	pid = fork();
 	switch (pid) {
 	case -1:
-		DIE(1 == 1, "pid == -1");
+		DIE(1, "pid == -1");
 		break;
 	case 0:		/* child process */
 		daemon(1, 1);
-		handle(connectfd);
+		handle(acceptfd);
 		exit(EXIT_SUCCESS);
 		break;
 	default:
 		break;
 	}
-
-	close(connectfd);
 }
 
 
@@ -160,7 +205,6 @@ int main(void)
 	int ret, listen_fd, accept_fd;
 	struct sockaddr_un addr, recv_addr;
 	socklen_t recv_addr_len;
-	struct lib lib;
 
 	remove(SOCKET_NAME);
 
