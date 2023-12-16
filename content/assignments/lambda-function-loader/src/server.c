@@ -43,8 +43,17 @@ static int lib_prehooks(struct lib *lib)
 
 static int lib_load(struct lib *lib)
 {
+	int rc;
+
+	strcpy(lib->outputfile, OUTPUT_TEMPLATE);
+	lib->output_fd = mkstemp(lib->outputfile);
+
+	rc = dup2(lib->output_fd, STDOUT_FILENO);
+	DIE(rc < 0, "dup2");
+
 	lib->handle = dlopen(lib->libname, RTLD_LAZY);
 	if (lib->handle == NULL) {
+		printf("Error: %s %s %s could not be executed.\n", lib->libname, lib->funcname, lib->filename);
 		return -1;
 	}
 
@@ -54,6 +63,7 @@ static int lib_load(struct lib *lib)
 
 	void *addr_func = dlsym(lib->handle, lib->funcname);
 	if (addr_func == NULL) {
+		printf("Error: %s %s %s could not be executed.\n", lib->libname, lib->funcname, lib->filename);
 		return -1;
 	}
 
@@ -74,24 +84,18 @@ static int lib_execute(struct lib *lib)
 	/* TODO: Implement lib_execute(). */
 	int rc;
 
-	strcpy(lib->outputfile, OUTPUT_TEMPLATE);
-	int output_fd = mkstemp(lib->outputfile);
-
-	rc = dup2(output_fd, STDOUT_FILENO);
-	DIE(rc < 0, "dup2");
-
 	/* No args/function specified */
 	if (!strlen(lib->filename)) {
 		lib->run();
 
-		rc = close(output_fd);
+		rc = close(lib->output_fd);
 		DIE(rc < 0, "close");
 
 		return 0;
 	} else {
 		lib->p_run(lib->filename);
 
-		rc = close(output_fd);
+		rc = close(lib->output_fd);
 		DIE(rc < 0, "close");
 
 		return 0;

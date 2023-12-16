@@ -14,6 +14,7 @@ struct lib {
 	char *libname;
 	char *funcname;
 	char *filename;
+	int output_fd;
 
 	void *handle;
 
