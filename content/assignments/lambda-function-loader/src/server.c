@@ -205,6 +205,7 @@ static void handle_in_new_process(int acceptfd)
 		exit(EXIT_SUCCESS);
 		break;
 	default:
+		close(acceptfd);
 		break;
 	}
 }
