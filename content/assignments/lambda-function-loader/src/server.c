@@ -21,18 +21,45 @@
 static int lib_prehooks(struct lib *lib)
 {
 	/* TODO: Implement lib_prehooks(). */
+
 	return 0;
 }
 
 static int lib_load(struct lib *lib)
 {
-	/* TODO: Implement lib_load(). */
+	lib->handle = dlopen(lib->libname, RTLD_LAZY);
+	if (lib->handle == NULL) {
+		return -1;
+	}
+
+	if (!strlen(lib->funcname)) {
+		strcpy(lib->funcname, "run");
+	}
+
+	void *addr_func = dlsym(lib->handle, lib->funcname);
+	if (addr_func == NULL) {
+		return -1;
+	}
+
+	if (strlen(lib->filename)) {
+		lib->p_run = addr_func;
+		lib->run = NULL;
+	} else {
+		lib->p_run = NULL;
+		lib->run = addr_func;
+	}
+
 	return 0;
+	/* TODO: Implement lib_load(). */
 }
 
 static int lib_execute(struct lib *lib)
 {
 	/* TODO: Implement lib_execute(). */
+	if (!strcmp("run", lib->funcname)) {
+		lib->run();
+	}
+
 	return 0;
 }
 
@@ -82,6 +109,51 @@ static int parse_command(const char *buf, char *name, char *func, char *params)
 	return ret;
 }
 
+static void handle(int connectfd)
+{
+	char buffer[BUFSIZ];
+	struct lib *library = malloc(sizeof(struct lib));
+	ssize_t bytes;
+
+	bytes = recv_socket(connectfd, buffer, BUFSIZ);
+	if (bytes < 0) {
+		close(connectfd);
+		free(library);
+		return;
+	}
+
+	library->funcname = calloc(BUFSIZE, 1);
+	library->libname = calloc(BUFSIZE, 1);
+	library->filename = calloc(BUFSIZE, 1);
+	parse_command(buffer, &library->libname, &library->funcname, &library->filename);
+
+	lib_run(library);
+
+	send_data(connectfd, buffer, strlen(buffer));
+}
+
+static void handle_in_new_process(int connectfd)
+{
+	pid_t pid;
+
+	pid = fork();
+	switch (pid) {
+	case -1:
+		DIE(1 == 1, "pid == -1");
+		break;
+	case 0:		/* child process */
+		daemon(1, 1);
+		handle(connectfd);
+		exit(EXIT_SUCCESS);
+		break;
+	default:
+		break;
+	}
+
+	close(connectfd);
+}
+
+
 int main(void)
 {
 	/* TODO: Implement server connection. */
@@ -89,7 +161,6 @@ int main(void)
 	struct sockaddr_un addr, recv_addr;
 	socklen_t recv_addr_len;
 	struct lib lib;
-	char buff[BUFSIZ];
 
 	remove(SOCKET_NAME);
 
@@ -109,12 +180,7 @@ int main(void)
 		accept_fd = accept(listen_fd, (struct sockaddr *) &recv_addr, &recv_addr_len);
 		DIE(accept_fd < 0, "accept");
 
-		memset(buff, 0, BUFSIZ);
-		ssize_t bytes_received = recv_socket(accept_fd, buff, BUFSIZ);
-		
-		send_socket(accept_fd, buff, bytes_received);
-
-		printf("%s\n", buff);
+		handle_in_new_process(accept_fd);
 
 		/* TODO - parse message with parse_command and populate lib */
 		/* TODO - handle request from client */
