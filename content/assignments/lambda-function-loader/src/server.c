@@ -196,10 +196,11 @@ static void handle_in_new_process(int acceptfd)
 	pid = fork();
 	switch (pid) {
 	case -1:
+		close_socket(acceptfd);
 		DIE(1, "pid == -1");
 		break;
 	case 0:		/* child process */
-			 daemon(1, 1);
+		daemon(1, 1);
 		handle(acceptfd);
 		exit(EXIT_SUCCESS);
 		break;
@@ -240,6 +241,8 @@ int main(void)
 		/* TODO - handle request from client */
 		//ret = lib_run(&lib);
 	}
+
+	close_socket(listen_fd);
 
 	return 0;
 }
