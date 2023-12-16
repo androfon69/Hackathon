@@ -8,22 +8,14 @@
 #include <unistd.h>
 
 #include "ipc.h"
-#include "../utils/utils.h"
 
 int create_socket(void)
 {
 	/* TODO: Implement create_socket(). */
-	int sock_fd, rc;
-	struct sockaddr_un addr;
+	int sock_fd;
 
-	sock_fd = socket(AF_UNIX, SOCK_DGRAM, 0);
+	sock_fd = socket(AF_UNIX, SOCK_STREAM, 0);
 	DIE(sock_fd < 0, "socket");
-
-	memset(&addr, 0, sizeof(addr));
-	addr.sun_family = AF_UNIX;
-	strcpy(addr.sun_path, SOCKET_NAME);
-	rc = bind(sock_fd, (struct sockaddr *) &addr, sizeof(addr));
-	DIE(rc < 0, "bind");
 
 	return sock_fd;
 }
@@ -31,14 +23,19 @@ int create_socket(void)
 int connect_socket(int fd)
 {
 	/* TODO: Implement connect_socket(). */
-	int connect_fd;
+	int rc;
 	struct sockaddr_un addr;
-	socklen_t addr_len = sizeof(addr);
 
-	connect_fd = accept(fd, (struct sockaddr *) &addr, &addr_len);
-	DIE(connect_fd < 0, "accept");
+	rc = access(SOCKET_NAME, R_OK | W_OK);
+	DIE(rc < 0, "access");
 
-	return connect_fd;
+	memset(&addr, 0, sizeof(addr));
+	addr.sun_family = AF_UNIX;
+	snprintf(addr.sun_path, sizeof(SOCKET_NAME), "%s", SOCKET_NAME);
+	rc = connect(fd, (struct sockaddr *) &addr, sizeof(addr));
+	DIE(rc < 0, "connect");
+
+	return rc;
 }
 
 ssize_t send_socket(int fd, const char *buf, size_t len)
